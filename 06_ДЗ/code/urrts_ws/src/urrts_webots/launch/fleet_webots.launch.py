@@ -88,9 +88,17 @@ def build(context):
     params_file = os.path.join(share, "config", "nav2_robot.yaml")
     sim_time = {"use_sim_time": True}
 
-    webots = WebotsLauncher(world=paths["world"], mode="realtime", ros2_supervisor=True,
-                            gui=gui)
-    actions = [webots, webots._supervisor]
+    remote = os.environ.get("URRTS_WEBOTS_REMOTE") == "1"
+    if remote:
+        # Webots запущен вручную на хосте (macOS): контроллеры подключаются по tcp
+        # к host.docker.internal:1234 (нужна WEBOTS_SHARED_FOLDER для режима tcp).
+        from webots_ros2_driver.webots_launcher import Ros2SupervisorLauncher
+        webots = None
+        actions = [Ros2SupervisorLauncher(port="1234")]
+    else:
+        webots = WebotsLauncher(world=paths["world"], mode="realtime", ros2_supervisor=True,
+                                gui=gui)
+        actions = [webots, webots._supervisor]
     actions += [
         Node(package="nav2_map_server", executable="map_server", name="map_server", output="screen",
              parameters=[sim_time, {"yaml_filename": paths["map"], "topic_name": "/map",
@@ -131,8 +139,9 @@ def build(context):
         actions.append(check)
         actions.append(RegisterEventHandler(OnProcessExit(
             target_action=check, on_exit=[EmitEvent(event=Shutdown(reason="прогон окончен"))])))
-    actions.append(RegisterEventHandler(OnProcessExit(
-        target_action=webots, on_exit=[EmitEvent(event=Shutdown(reason="Webots закрыт"))])))
+    if webots is not None:
+        actions.append(RegisterEventHandler(OnProcessExit(
+            target_action=webots, on_exit=[EmitEvent(event=Shutdown(reason="Webots закрыт"))])))
     return actions
 
 
